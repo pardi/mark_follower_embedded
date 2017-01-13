@@ -58,12 +58,7 @@ ids_camera::ids_camera(const HIDS id, const int fps, const int width, const int 
 		if (!rec.empty())
 			recON(rec);
 		
-	}
-	if (!init()){
-	    terminate_on_error();
-	    return;
-	}
-	
+	}	
 }
 
 
@@ -326,10 +321,8 @@ Mat ids_camera::get_frame(){
 	Mat frame(height_, width_, CV_8UC3);
 
 	if (offline_){
-
 		VideoCapture capture = *off_video_ ;
 		capture >> frame;
-
 	}else{
 
 		//pointer to where the image is stored

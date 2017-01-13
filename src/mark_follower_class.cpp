@@ -38,34 +38,34 @@ mark_follower_class::mark_follower_class(ros::NodeHandle* n, const bool verbose)
 
 	// Get params
 
-	n_->param("/makr_follower_embedded/challenge", challenge_, false);
+	n_->param("/mark_follower_embedded/challenge", challenge_, false);
 	n_->param("/mark_follower_embedded/sitl", sitl_, false);
 
 	ROS_INFO("Starting mark follower: %s, SITL: %s", (challenge_ == FIRST_CHALLENGE)?"First Challenge":"Third Challenge", (sitl_ == true)?"Enabled":"Disable");
 
 	int hCam;
-	int width, height, bpp;
+	int bpp;
 	bool offline;
 	std::string rec, off_vid;
    	bool verbCam;
 
-	n_->param("/makr_follower_embedded/id", hCam, 1);
-	n_->param("/makr_follower_embedded/fps", fps_, 15);
-	n_->param("/makr_follower_embedded/width", width, CAM_VIDEO_WIDTH);
-	n_->param("/makr_follower_embedded/height", height, CAM_VIDEO_HEIGHT);
-	n_->param("/makr_follower_embedded/bpp", bpp, CAM_VIDEO_BPP);
-	n_->param("/makr_follower_embedded/verbose", verbCam, true);
-	n_->param<std::string>("/makr_follower_embedded/rec_name", rec, "");
-	n_->param("/makr_follower_embedded/offline", offline, false);
-	n_->param<std::string>("/makr_follower_embedded/off_vid", off_vid, "");
-
+	n_->param("/mark_follower_embedded/id", hCam, 1);
+	n_->param("/mark_follower_embedded/fps", fps_, 15);
+	n_->param("/mark_follower_embedded/width", width_, CAM_VIDEO_WIDTH);
+	n_->param("/mark_follower_embedded/height", height_, CAM_VIDEO_HEIGHT);
+	n_->param("/mark_follower_embedded/bpp", bpp, CAM_VIDEO_BPP);
+	n_->param("/mark_follower_embedded/verbose", verbCam, true);
+	n_->param<std::string>("/mark_follower_embedded/rec_name", rec, "");
+	n_->param("/mark_follower_embedded/offline", offline, false);
+	n_->param<std::string>("/mark_follower_embedded/offline_name", off_vid, "");
 	
-	camera_ = new ids::ids_camera( hCam, fps_, width, height, bpp, rec, offline, off_vid, verbCam);
+	camera_ = new ids::ids_camera( hCam, fps_, width_, height_, bpp, rec, offline, off_vid, verbCam);
 
+	nF_flag_ = false;
 
 	// Service
 
-	param_ser_ = n_->advertiseService("makr_follower_embedded/params", &mark_follower_class::paramService, this);
+	param_ser_ = n_->advertiseService("mark_follower_embedded/params", &mark_follower_class::paramService, this);
 
 
 	// >> Init variable <<
@@ -78,7 +78,7 @@ mark_follower_class::mark_follower_class(ros::NodeHandle* n, const bool verbose)
 
 	// Load template for the first challenge
 	if (challenge_ == FIRST_CHALLENGE)
-		tmpl_ = imread("/home/solaris/catkin_ws/src/mark_follower/img/template.jpg", CV_LOAD_IMAGE_COLOR );
+		tmpl_ = imread("/home/solaris/catkin_ws/src/mark_follower_embedded/img/template.jpg", CV_LOAD_IMAGE_COLOR );
 	
 	// >> Threads <<
 
@@ -101,7 +101,7 @@ mark_follower_class::mark_follower_class(ros::NodeHandle* n, const bool verbose)
 	// >> Publishers <<
 
 	// Ros moving uav topic
-    	markTarget_pub_ = n_->advertise<mark_follower::markPoseStamped>("/ids_rec/pose", 10);
+    	markTarget_pub_ = n_->advertise<mark_follower::markPoseStamped>("/mark_follower_embedded/pose", 10);
 
 	// ---------------------------------------------------------------------------------------- >> TRIAL << ----------------------------------------------------------------------------------------
 	//    namedWindow("Control", CV_WINDOW_AUTOSIZE); //create a window called "Control"
@@ -133,9 +133,6 @@ mark_follower_class::mark_follower_class(ros::NodeHandle* n, const bool verbose)
 
 	// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-	// Ros loop
-
-	ros::spin();        
 
 }
 
@@ -174,6 +171,7 @@ void mark_follower_class::cameraThread(){
 
 		// Wait
 		r.sleep();
+
 	}
 }
 
@@ -297,7 +295,7 @@ void mark_follower_class::t_matching(descriptor dsc, Mat tmpl){
 	matchLoc.y = dsc.origin.y + maxLoc.y + tmpl.rows / 2;
 
 	// Push point the sorted list
-	sl.push(matchLoc, maxVal);
+	sl.push(matchLoc, maxVal, dsc.is_square);
 
 	// Create point with custom dimensions
 	Point fdsc(dsc.origin.x + dsc.img.cols, dsc.origin.y + dsc.img.rows);
@@ -307,6 +305,122 @@ void mark_follower_class::t_matching(descriptor dsc, Mat tmpl){
 
 }
 	
+vector<descriptor> mark_follower_class::get_blobFirstCh(const Mat src){
+	
+	vector<vector<Point> > contours, cb;
+	vector<Vec4i> hierarchy;
+
+	float epsilon, area;
+	int minX, minY;
+	int maxX, maxY;
+
+	Mat drawing = Mat::zeros( src.size(), CV_8UC3 );
+
+	Mat blob;
+	descriptor bd;
+	vector<descriptor> blob_descriptor;
+	vector<shapes> shape_dir;
+	vector<bool> is_square;
+
+	// Find contours
+	findContours(src, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+
+	// Check out contours appling a 5% approximation on the area
+	for (int i = 0; i < contours.size(); ++i){
+		area = arcLength(contours[i], true);
+
+		epsilon = 0.05 * area;
+
+		approxPolyDP(contours[i], contours[i], epsilon, true);
+
+		// Save contours only if area is bigger the 50 and the section has 4 vertex
+		// cout << "area " << area << " "<< contours[i].size() << endl;
+
+		if (contours[i].size() == 4 && area > 15){ // 100 
+
+			double d1, d2, d3, d4, diag1, diag2;
+			double P;
+
+			d1 = sqrt((pow(contours[i][0].x - contours[i][1].x, 2)) +  (pow(contours[i][0].y - contours[i][1].y, 2)) );
+			d2 = sqrt((pow(contours[i][1].x - contours[i][2].x, 2)) +  (pow(contours[i][1].y - contours[i][2].y, 2)) );
+			d3 = sqrt((pow(contours[i][2].x - contours[i][3].x, 2)) +  (pow(contours[i][2].y - contours[i][3].y, 2)) );
+			d4 = sqrt((pow(contours[i][3].x - contours[i][0].x, 2)) +  (pow(contours[i][3].y - contours[i][0].y, 2)) );
+
+			diag1 = sqrt((pow(contours[i][0].x - contours[i][2].x, 2)) +  (pow(contours[i][0].y - contours[i][2].y, 2)) );
+			diag2 = sqrt((pow(contours[i][1].x - contours[i][3].x, 2)) +  (pow(contours[i][1].y - contours[i][3].y, 2)) );
+
+			// Is it a square?
+
+			// cout << " " <<d1 << " " << d2 << " " << d3 << " " << d4 << " " << diag1 * cos(M_PI / 4) << " " << diag2 * cos(M_PI / 4) << endl;
+
+			is_square.push_back(fabs(d1 - d2) < 20 && fabs(d1 - d2) < 20 && fabs(d1 - d3) < 20 && fabs(diag1  - diag2) < 10);
+
+			cb.push_back(contours[i]);
+		}
+	}
+
+	
+	// ------------------------> Draw contours <------------------------
+
+	// if (cb.size() > 0)
+	// {
+	// 	// Draw line (blue)
+
+	// 	for( int i = 0; i< contours.size(); i++ )		
+	// 		drawContours( drawing, contours, i, Scalar( 255, 0, 0 ), 2, 8, hierarchy, 0, Point() );
+		
+	// 	// Draw vertex (red)
+
+	// 	for (int i = 0; i < cb.size(); i++ )
+	// 		for (int j = 0; j < cb[i].size(); j++ )
+	// 			circle( drawing, cb[i][j], 2, Scalar(0, 0, 255), 3, 16);
+
+	// }
+	
+	// imshow("draw", drawing);
+
+	// ---------------------------------------------------------------------------
+
+	for (int i = 0; i < cb.size(); i++){
+		
+		minX = height_;
+		minY = width_;
+		maxX = 0;
+		maxY = 0;
+
+		for (int j = 0; j < cb[i].size(); j++){
+			
+			if (cb[i][j].x > maxX)
+				maxX = cb[i][j].x;            
+
+			if (cb[i][j].x < minX)
+				minX = cb[i][j].x;
+
+			if (cb[i][j].y > maxY)
+				maxY = cb[i][j].y;        
+
+			if (cb[i][j].y < minY)
+				minY = cb[i][j].y;
+		}
+		
+		// Save the blob from original image
+
+		blob = ocvMat_(Rect(minX, minY, maxX - minX, maxY - minY));
+
+		// Store information about the blob in a blob directory
+
+		bd.img = blob;
+		bd.origin.x = minX;
+		bd.origin.y = minY;
+		bd.is_square = is_square[i];
+
+		blob_descriptor.push_back(bd);
+
+	}
+
+	return blob_descriptor;
+}
+
 vector<descriptor> mark_follower_class::get_blob(const Mat src){
 
 	vector<vector<Point> > contours, cb;
@@ -880,6 +994,8 @@ void mark_follower_class::imageFirstChallengeCallback()
 {
 	ros::Rate r(20);
 
+	ROS_INFO("FIRST_CHALLENGE");
+
 	while (ros::ok()){
 
 		/// ----------------------------------------------------> Time manager <----------------------------------------------------
@@ -890,13 +1006,22 @@ void mark_follower_class::imageFirstChallengeCallback()
 		/// -------------------------------------------------------------------------------------------------------------------------------------
 
 		// Get the msg image
+
 		newF_mtx_.lock();
 
-		ocvMat_ = newFrame_;
+		if (nF_flag_){
+			ocvMat_ = newFrame_;
+			
+			nF_flag_ = false;
 
-		nF_flag_ = false;
+			newF_mtx_.unlock();
+		}
+		else{
+			newF_mtx_.unlock();
+			continue;
+		}
+	
 
-		newF_mtx_.unlock();
 		// --------------->Pyramid<-------------- 
 
 		// Half resolution image
@@ -944,8 +1069,7 @@ void mark_follower_class::imageFirstChallengeCallback()
 			circle( color_dst, T_Intersect, 2, Scalar(255, 150, 100), 3, 16);	
 		}
 	
-		imshow( "Detected Lines", color_dst );
-
+		// imshow( "Detected Lines", color_dst );
 
 		
 	     // END HOUGH TR
@@ -992,7 +1116,7 @@ void mark_follower_class::imageFirstChallengeCallback()
 
 		// Get contours of the blobs
 
-		blob_desc = get_blob(thr);
+		blob_desc = get_blobFirstCh(thr);
 
 		// Call matching function on the blob descriptor discovered by get_blob()
 
@@ -1002,7 +1126,8 @@ void mark_follower_class::imageFirstChallengeCallback()
 		// Find out the best match
 
 		// Take target from matching
-		Point T_matching = sl.get_max();
+		bool is_square = false;
+		Point T_matching = sl.get_max(&is_square);
 
 		// // Clear sorted list
 		sl.clear();
@@ -1044,9 +1169,10 @@ void mark_follower_class::imageFirstChallengeCallback()
 			w2 = 1 - w1;			
 
 			//  Weighted sum
+
 			target_.x = 2 * (T_matching.x * w1 + T_Intersect.x * w2);
 			target_.y = 2 * (T_matching.y * w1 + T_Intersect.y * w2);
-
+			
 			// Kalman Filter 
 			if (!state_kf_){
 				init_kalman(target_);
@@ -1058,9 +1184,18 @@ void mark_follower_class::imageFirstChallengeCallback()
 			// Draw point
 			circle( ocvMat_, target_, 2, Scalar(255, 0, 0), 3, 16);
 
+
 			budgetResidual_ = 10;
 
-			refVariance_++;
+			if (is_square)
+				refVariance_++;
+			else
+				refVariance_ -= .25;
+
+			// Saturation
+
+			if(refVariance_ > 110)
+				refVariance_ = 110;
 
 		}
  
@@ -1075,12 +1210,6 @@ void mark_follower_class::imageFirstChallengeCallback()
 		msg2pub.variance = refVariance_;
 
 		markTarget_pub_.publish(msg2pub);
-
-		// Publish augmentated image
-		// sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", ocvMat_).toImageMsg();
-
-		// Publish the message
-		// image_aug_pub_.publish(msg);
 
 		cv::imshow("view", ocvMat_);
 		cv::waitKey(30);

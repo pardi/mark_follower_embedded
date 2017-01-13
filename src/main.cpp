@@ -12,5 +12,7 @@ int main(int argc, char** argv){
 	// Call mark_follower_class constructor
 	mark_follower_class mfc(&n);
 	
+	ros::spin();
+
 	return 0;
 }

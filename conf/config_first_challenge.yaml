@@ -1,11 +1,11 @@
-mark_follower/challenge: false # false -> first challenge, true -> third challenge
-mark_follower/sitl: false  # false -> sitl disable, true -> sitl enabled
-mark_follower/camera_id: 1
-mark_follower/fps: 15 # IDS-XS reaches at maximum 15 FPS
-mark_follower/width: 640
-mark_follower/heigth: 480
-mark_follower/bpp: 24
-mark_follower/verbose: true
-mark_follower/rec_name: "/home/solaris/catkin_ws/src/mark_follower_embedded/rec/ids_viewer_rec_15fps.avi" # let this field empty to disable the recording, please insert absolute address -- /home/solaris/catkin_ws/src/ids_viewer/rec/ids_viewer_rec.avi
-mark_follower/offline: true # when it is set the stream cames from mark_follower/offline_name video, if it exists
-mark_follower/offline_name: "/home/solaris/catkin_ws/src/ids_viewer/rec/ids_viewer_rec_15fps_4.avi"
+mark_follower_embedded/challenge: false # false -> first challenge, true -> third challenge
+mark_follower_embedded/sitl: false  # false -> sitl disable, true -> sitl enabled
+mark_follower_embedded/camera_id: 1
+mark_follower_embedded/fps: 15 # IDS-XS reaches at maximum 15 FPS
+mark_follower_embedded/width: 1280
+mark_follower_embedded/height: 720
+mark_follower_embedded/bpp: 24
+mark_follower_embedded/verbose: true
+mark_follower_embedded/rec_name: "/home/solaris/catkin_ws/src/mark_follower_embedded/rec/ids_viewer_rec_15fps.avi" # let this field empty to disable the recording, please insert absolute address -- /home/solaris/catkin_ws/src/ids_viewer/rec/ids_viewer_rec.avi
+mark_follower_embedded/offline: true # when it is set the stream cames from mark_follower_embedded/offline_name video, if it exists
+mark_follower_embedded/offline_name: "/home/solaris/catkin_ws/src/mark_follower_embedded/rec/ids_viewer_rec_15fps_4.avi"
